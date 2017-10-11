@@ -1,5 +1,5 @@
 # Dual Path Networks
-** This is the MxNet implement of the TRAIN of DPN(dual path network). 
+### This is the MxNet implement of the TRAIN of DPN(dual path network). 
 
 paper: https://arxiv.org/abs/1707.01629 . 
 
