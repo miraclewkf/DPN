@@ -1,12 +1,7 @@
 import argparse
-import find_mxnet
 import mxnet as mx
-import time
 import os, sys
 import logging
-import importlib
-sys.path.insert(0, "./settings")
-sys.path.insert(0, "../")
 
 import logging
 logger = logging.getLogger()
@@ -27,7 +22,7 @@ def get_fine_tune_model(sym, arg_params, num_classes, layer_name, batchsize):
     new_args = dict({k:arg_params[k] for k in arg_params if 'fc' not in k})
     return (net, new_args)
 
-def multi_factor_scheduler(begin_epoch, epoch_size, step=[7,14], factor=0.1):
+def multi_factor_scheduler(begin_epoch, epoch_size, step=[5,10], factor=0.1):
     step_ = [epoch_size * (x-begin_epoch) for x in step if x-begin_epoch > 0]
     return mx.lr_scheduler.MultiFactorScheduler(step=step_, factor=factor) if len(step_) else None
 
@@ -86,7 +81,7 @@ def train_model(model, gpus, batch_size, image_shape, epoch=0, num_epoch=20, kv=
         symbol        = new_sym
     )
 
-    checkpoint = mx.callback.do_checkpoint(args.save_result)
+    checkpoint = mx.callback.do_checkpoint(args.save_result+args.save_name)
 
     eval_metric = ['accuracy']
 
@@ -124,6 +119,7 @@ if __name__ == '__main__':
     parser.add_argument('--num-examples',  type=int)
     parser.add_argument('--mom',           type=float, default=0.9, help='momentum for sgd')
     parser.add_argument('--wd',            type=float, default=0.0001, help='weight decay for sgd')
+    parser.add_argument('--save-name',     type=str, help='the save name of model')
     args = parser.parse_args()
 
     logger = logging.getLogger()
@@ -139,4 +135,4 @@ if __name__ == '__main__':
     logging.info(args)
 
     train_model(model=args.model, gpus=args.gpus, batch_size=args.batch_size,
-          image_shape='3,224,224', epoch=0, num_epoch=args.num_epoch, kv=kv)
+          image_shape='3,224,224', epoch=args.epoch, num_epoch=args.num_epoch, kv=kv)
