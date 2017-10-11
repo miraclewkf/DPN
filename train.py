@@ -3,7 +3,6 @@ import mxnet as mx
 import os, sys
 import logging
 
-import logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
