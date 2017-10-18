@@ -3,23 +3,14 @@ import mxnet as mx
 import os, sys
 import logging
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-
-formatter = logging.Formatter('%(asctime)s - %(message)s')
-console = logging.StreamHandler()
-console.setFormatter(formatter)
-logger.addHandler(console)
-
-def get_fine_tune_model(sym, arg_params, num_classes, layer_name, batchsize):
+def get_fine_tune_model(sym, num_classes, layer_name):
     
     all_layers = sym.get_internals()
     net = all_layers[layer_name+'_output']
     net = mx.symbol.FullyConnected(data=net, num_hidden=num_classes, name='fc')
     net = mx.symbol.SoftmaxOutput(data=net, name='softmax')
 
-    new_args = dict({k:arg_params[k] for k in arg_params if 'fc' not in k})
-    return (net, new_args)
+    return net
 
 def multi_factor_scheduler(begin_epoch, epoch_size, step=[5,10], factor=0.1):
     step_ = [epoch_size * (x-begin_epoch) for x in step if x-begin_epoch > 0]
@@ -34,7 +25,7 @@ def train_model(model, gpus, batch_size, image_shape, epoch=0, num_epoch=20, kv=
         path_root           = args.image_train,
         part_index          = kv.rank,
         num_parts           = kv.num_workers,
-        shuffle             = True,        
+        shuffle             = True,
         data_name           = 'data',
         label_name          = 'softmax_label',
         aug_list            = mx.image.CreateAugmenter((3,224,224),resize=224,rand_crop=True,rand_mirror=True,mean=True,std=True))
@@ -56,8 +47,8 @@ def train_model(model, gpus, batch_size, image_shape, epoch=0, num_epoch=20, kv=
     prefix = model
     sym, arg_params, aux_params = mx.model.load_checkpoint(prefix, epoch)
 
-    (new_sym, new_args) = get_fine_tune_model(
-        sym, arg_params, args.num_classes, 'flatten', args.batch_size)
+    new_sym = get_fine_tune_model(
+        sym, args.num_classes, 'flatten')
 
     epoch_size = max(int(args.num_examples / args.batch_size / kv.num_workers), 1)
     lr_scheduler=multi_factor_scheduler(args.epoch, epoch_size)
@@ -92,10 +83,10 @@ def train_model(model, gpus, batch_size, image_shape, epoch=0, num_epoch=20, kv=
               kvstore=kv,
               optimizer='sgd',
               optimizer_params=optimizer_params,
-              arg_params=new_args,
+              arg_params=arg_params,
               aux_params=aux_params,
               initializer=initializer,
-              allow_missing=True,
+              allow_missing=True, # for new fc layer
               batch_end_callback=mx.callback.Speedometer(args.batch_size, 20),
               epoch_end_callback=checkpoint)
     
@@ -110,27 +101,39 @@ if __name__ == '__main__':
     parser.add_argument('--image-train',   type=str)
     parser.add_argument('--data-val',      type=str)
     parser.add_argument('--image-val',     type=str)
-    parser.add_argument('--num-classes',   type=int, default=6)
+    parser.add_argument('--num-classes',   type=int)
     parser.add_argument('--lr',            type=float, default=0.001)
-    parser.add_argument('--num-epoch',     type=int, default=20)
+    parser.add_argument('--num-epoch',     type=int, default=2)
     parser.add_argument('--kv-store',      type=str, default='device', help='the kvstore type')
     parser.add_argument('--save-result',   type=str, help='the save path')
-    parser.add_argument('--num-examples',  type=int)
+    parser.add_argument('--num-examples',  type=int, default=20000)
     parser.add_argument('--mom',           type=float, default=0.9, help='momentum for sgd')
     parser.add_argument('--wd',            type=float, default=0.0001, help='weight decay for sgd')
     parser.add_argument('--save-name',     type=str, help='the save name of model')
     args = parser.parse_args()
 
-    logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-
     kv = mx.kvstore.create(args.kv_store)
 
     if not os.path.exists(args.save_result):
-        os.mkdir(args.save_result)
+        os.makedirs(args.save_result)
+
+    # create a logger and set the level
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    formatter = logging.Formatter('%(asctime)s - %(message)s')
+
+    # this handler is used to record information in train.log
     hdlr = logging.FileHandler(args.save_result+ '/train.log')
     hdlr.setFormatter(formatter)
     logger.addHandler(hdlr)
+    
+    # this handler is used to print information in terminal
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+
+    # record the information of args
     logging.info(args)
 
     train_model(model=args.model, gpus=args.gpus, batch_size=args.batch_size,
